@@ -153,3 +153,49 @@ Tesnya gampang: bikin tiga baris murah/tengah/mahal, pastikan yang murah menang.
 ---
 
 Untuk riset pribadi, bukan rekomendasi beli atau jual.
+
+## Backtest
+
+```bash
+python backtest.py --fetch-benchmark      # sekali, untuk ambil IHSG
+python backtest.py                        # mode jujur: sinyal harga saja
+python backtest.py --mode full            # ikutkan fundamental (BIAS)
+python backtest.py --top 10 --rebalance QE --cost 25
+```
+
+Keluarannya: total return, CAGR, volatilitas, Sharpe, max drawdown, turnover,
+dibandingkan IHSG — plus `backtest_holdings.csv` berisi saham apa yang dipegang
+tiap periode, supaya kamu bisa memeriksa pilihannya masuk akal atau tidak.
+
+### Kenapa ada dua mode
+
+**`--mode price` (default)** hanya memakai momentum, posisi terhadap MA200, dan
+likuiditas. Semuanya point-in-time benar: pemilihan di tanggal T hanya melihat
+harga sampai T. Ini satu-satunya angka yang pantas dipercaya.
+
+**`--mode full`** ikut memakai PER/PBV/ROE. Tabel `fundamentals` berisi angka
+HARI INI, bukan riwayatnya — jadi memakainya untuk memilih saham tahun lalu sama
+dengan memilih dengan laporan keuangan yang belum terbit. Mode ini ada supaya kamu
+bisa melihat sendiri seberapa besar bias itu menggelembungkan hasil. Selisih
+antara dua mode itu adalah ukuran kebohongannya, bukan ukuran nilai fundamental.
+
+### Bias yang tersisa, bahkan di mode jujur
+
+**Survivorship.** Universe datang dari screener Yahoo hari ini, jadi isinya cuma
+emiten yang masih tercatat. Yang delisting dan bangkrut sudah lenyap. Backtest ini
+otomatis melewatkan kekalahan terburuk yang benar-benar terjadi.
+
+**Biaya.** Default 25 bps per sisi. Pada turnover ~40% per bulan, biaya memakan
+sekitar 2,5% per tahun — cukup untuk menghapus edge yang tipis. Naikkan `--cost`
+kalau brokermu lebih mahal atau kamu trading saham tipis dengan spread lebar.
+
+Untuk menghilangkan dua bias pertama, mulai simpan snapshot `fundamentals` tiap
+bulan dari sekarang, dan catat emiten yang hilang dari universe. Setahun lagi kamu
+punya data yang benar-benar bisa di-backtest.
+
+### Mesinnya sudah diuji
+
+Diuji pada dua dunia buatan: harga acak murni tanpa sinyal (edge +1,8%, yaitu
+derau) dan harga dengan momentum yang sengaja ditanam (edge +5,4%, terdeteksi).
+Juga diverifikasi `score_at()` menghasilkan skor identik ketika seluruh data
+setelah tanggal rebalance dihapus — tidak ada kebocoran masa depan.
