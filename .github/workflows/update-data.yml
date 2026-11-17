@@ -1,0 +1,54 @@
+name: Update data IDX
+
+# 10:00 UTC = 17:00 WIB, setelah pasar tutup.
+# Runner GitHub ada di luar negeri, jadi selalu pakai UTC di sini.
+on:
+  schedule:
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch:        # tombol "Run workflow" di tab Actions
+
+permissions:
+  contents: write           # dibutuhkan untuk commit data.json kembali ke repo
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Scrape Yahoo Finance
+        run: |
+          python idx_data.py universe
+          python idx_data.py prices --period 3y
+          python idx_data.py fundamentals --top 300
+
+      - name: Export ke docs/data.json
+        run: python export_web.py
+
+      - name: Commit kalau ada perubahan
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data.json
+          # --quiet keluar dengan kode 1 kalau ADA perubahan, jadi logikanya dibalik:
+          # kalau tidak ada perubahan (exit 0), lewati commit.
+          if git diff --staged --quiet; then
+            echo "Data tidak berubah, tidak ada yang di-commit."
+          else
+            git commit -m "data: update $(date -u +'%Y-%m-%d')"
+            git push
+          fi

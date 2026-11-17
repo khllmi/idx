@@ -1,0 +1,57 @@
+name: Refresh harga intraday
+
+# Bursa IDX buka 09:00-16:15 WIB = 02:00-09:15 UTC. Runner GitHub pakai UTC.
+# Tiap 15 menit di jam itu, hari kerja saja.
+#
+# Realistis soal waktu: cron GitHub Actions sering TELAT 5-20 menit saat runner
+# sibuk, dan tidak dijamin jalan tepat waktu. Ditambah delay Yahoo ~15-20 menit,
+# angka di situs tertinggal 20-40 menit dari pasar. Itu batas atas yang bisa
+# dicapai tanpa server sendiri dan tanpa feed IDX berbayar.
+on:
+  schedule:
+    - cron: "*/15 2-9 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Kalau run sebelumnya belum selesai, batalkan — harga basi tidak ada gunanya.
+concurrency:
+  group: refresh-quotes
+  cancel-in-progress: true
+
+jobs:
+  quotes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Ambil harga terbaru
+        run: python refresh_quotes.py
+
+      - name: Commit kalau harga berubah
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/quotes.json
+          if git diff --staged --quiet; then
+            echo "Harga tidak berubah."
+          else
+            git commit -m "quotes: $(date -u +'%Y-%m-%d %H:%M') UTC"
+            # Workflow data harian bisa push di menit yang sama; rebase lalu
+            # coba lagi daripada gagal karena non-fast-forward.
+            for i in 1 2 3; do
+              git pull --rebase --autostash && git push && exit 0
+              echo "push gagal, coba lagi ($i)"; sleep 5
+            done
+            exit 1
+          fi

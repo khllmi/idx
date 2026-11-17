@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Screener Saham IDX</title>
+<meta name="description" content="Screening saham Bursa Efek Indonesia dari data Yahoo Finance.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: satu kolom — pita filter lengket di atas, ringkasan, sebar, tabel. */
+:root{
+  --bg:#eff2f6; --surface:#ffffff; --surface-2:#f6f8fb; --line:#d7dde7;
+  --fg:#12161d; --fg-dim:#5b6575; --fg-faint:#8b94a4;
+  --accent:#3d4fd1; --accent-soft:#e5e8fb;
+  --up:#0e7a58; --down:#c03a2e; --warn:#9a6700;
+  --font-sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1118; --surface:#161b25; --surface-2:#1d2330; --line:#2a3242;
+    --fg:#e7eaf1; --fg-dim:#98a2b5; --fg-faint:#6d778a;
+    --accent:#8c98f7; --accent-soft:#232a45;
+    --up:#3ec194; --down:#f0776b; --warn:#d9a441;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1118; --surface:#161b25; --surface-2:#1d2330; --line:#2a3242;
+  --fg:#e7eaf1; --fg-dim:#98a2b5; --fg-faint:#6d778a;
+  --accent:#8c98f7; --accent-soft:#232a45;
+  --up:#3ec194; --down:#f0776b; --warn:#d9a441;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:var(--font-sans); font-size:14px; line-height:1.5;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{
+  max-width:1280px; margin:0 auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:0 48px;
+}
+h1,h2,h3{margin:0; text-wrap:balance; letter-spacing:-0.015em}
+.mono{font-family:var(--font-mono); font-variant-numeric:tabular-nums}
+
+/* ---------- banner data contoh ---------- */
+#demoBanner{
+  background:var(--warn); color:#fff; font-weight:600; font-size:13px;
+  padding:10px max(16px,env(safe-area-inset-left,0px));
+  text-align:center;
+}
+#demoBanner span{font-weight:400; opacity:.92}
+
+/* ---------- header ---------- */
+header{padding-block:28px 20px; border-bottom:1px solid var(--line)}
+.title-row{display:flex; flex-wrap:wrap; align-items:baseline; gap:12px 16px}
+h1{font-size:clamp(22px,4vw,30px); font-weight:700}
+.sub{color:var(--fg-dim); font-size:13px; display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:8px}
+.sub b{font-weight:600; color:var(--fg)}
+#themeBtn{
+  margin-left:auto; background:var(--surface); color:var(--fg-dim);
+  border:1px solid var(--line); border-radius:7px; padding:7px 12px;
+  font:inherit; font-size:12px; cursor:pointer;
+}
+#themeBtn:hover{color:var(--fg); border-color:var(--accent)}
+.live{
+  display:inline-flex; align-items:center; gap:7px; margin-top:10px;
+  background:var(--surface); border:1px solid var(--line); border-radius:999px;
+  padding:5px 13px; font-size:12px; color:var(--fg-dim);
+}
+.live i{width:7px; height:7px; border-radius:50%; background:var(--fg-faint); flex:none}
+.live.on i{background:var(--up); box-shadow:0 0 0 3px color-mix(in srgb,var(--up) 22%,transparent)}
+.live.stale i{background:var(--warn)}
+.live small{color:var(--fg-faint); font-size:11px}
+
+/* ---------- filter ---------- */
+.filters{
+  position:sticky; top:env(safe-area-inset-top,0px); z-index:10;
+  background:var(--bg); border-bottom:1px solid var(--line);
+  padding-block:14px; margin-bottom:22px;
+}
+.presets{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:14px}
+.chip{
+  background:var(--surface); border:1px solid var(--line); color:var(--fg-dim);
+  border-radius:999px; padding:6px 13px; font:inherit; font-size:12.5px;
+  cursor:pointer; white-space:nowrap;
+}
+.chip:hover{color:var(--fg); border-color:var(--accent)}
+.chip[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600}
+.controls{display:grid; grid-template-columns:repeat(auto-fit,minmax(142px,1fr)); gap:10px 12px}
+.field{display:flex; flex-direction:column; gap:4px; min-width:0}
+.field label{font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--fg-faint); font-weight:600}
+.field input,.field select{
+  background:var(--surface); color:var(--fg); border:1px solid var(--line);
+  border-radius:7px; padding:7px 9px; font:inherit; font-size:13px; min-width:0; width:100%;
+}
+.field input:focus-visible,.field select:focus-visible,.chip:focus-visible,#themeBtn:focus-visible,th:focus-visible{
+  outline:2px solid var(--accent); outline-offset:2px;
+}
+.pair{display:flex; gap:6px}
+.toggles{display:flex; flex-wrap:wrap; gap:14px; margin-top:12px; font-size:12.5px; color:var(--fg-dim)}
+.toggles label{display:flex; align-items:center; gap:6px; cursor:pointer}
+.toggles input{accent-color:var(--accent); margin:0}
+
+/* ---------- tiles ---------- */
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:22px}
+.tile{background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:14px 16px}
+.tile .k{font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--fg-faint); font-weight:600}
+.tile .v{font-family:var(--font-mono); font-size:25px; font-weight:600; margin-top:5px; font-variant-numeric:tabular-nums}
+
+/* ---------- panel ---------- */
+.panel{background:var(--surface); border:1px solid var(--line); border-radius:12px; margin-bottom:22px; overflow:hidden}
+.panel-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 14px; padding:14px 16px; border-bottom:1px solid var(--line)}
+.panel-head h2{font-size:15px; font-weight:600}
+.panel-head .note{font-size:12px; color:var(--fg-dim)}
+.chart-box{padding:12px 16px 16px; position:relative}
+canvas{display:block; width:100%; max-width:100%; height:330px}
+#tip{
+  position:absolute; pointer-events:none; opacity:0; transition:opacity .12s;
+  background:var(--fg); color:var(--bg); border-radius:7px; padding:7px 10px;
+  font-size:12px; font-family:var(--font-mono); white-space:nowrap; z-index:5;
+}
+
+/* ---------- tabel ---------- */
+.scroll{overflow-x:auto}
+table{border-collapse:collapse; width:100%; font-size:13px}
+th,td{padding:9px 11px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line)}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+thead th{
+  position:sticky; top:0; background:var(--surface-2); z-index:2;
+  font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--fg-dim); font-weight:600; cursor:pointer; user-select:none;
+}
+thead th:hover{color:var(--fg)}
+thead th[data-dir]{color:var(--accent)}
+thead th[data-dir]::after{content:" ▼"; font-size:8px}
+thead th[data-dir="asc"]::after{content:" ▲"}
+tbody tr:hover{background:var(--surface-2)}
+td.num{font-family:var(--font-mono); font-variant-numeric:tabular-nums}
+.tk{font-family:var(--font-mono); font-weight:600; letter-spacing:.02em}
+.nm{color:var(--fg-dim); max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.up{color:var(--up)} .down{color:var(--down)} .dim{color:var(--fg-faint)}
+.bar{display:flex; align-items:center; gap:7px; justify-content:flex-end}
+.bar i{display:block; height:5px; border-radius:3px; background:var(--accent); min-width:2px}
+.flag{
+  display:inline-block; width:7px; height:7px; border-radius:50%;
+  background:var(--warn); margin-left:5px; vertical-align:middle;
+}
+.empty{padding:40px 16px; text-align:center; color:var(--fg-dim)}
+footer{color:var(--fg-dim); font-size:12px; line-height:1.65; border-top:1px solid var(--line); padding-top:16px}
+footer b{color:var(--fg)}
+@media (max-width:560px){
+  .nm,.col-sector{display:none}
+  canvas{height:260px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="demoBanner" hidden>
+  DATA CONTOH — angka di halaman ini dibuat acak, bukan data pasar.
+  <span>Jalankan <code>export_web.py</code> dan commit <code>docs/data.json</code> untuk memakai data asli.</span>
+</div>
+
+<div class="wrap">
+
+<header>
+  <div class="title-row">
+    <h1>Screener Saham IDX</h1>
+    <button id="themeBtn" type="button">Tema</button>
+  </div>
+  <div class="sub" id="meta"><span>Memuat data…</span></div>
+  <div class="live" id="liveStatus" hidden></div>
+</header>
+
+<section class="filters" aria-label="Filter">
+  <div class="presets" id="presets"></div>
+
+  <div class="controls">
+    <div class="field">
+      <label for="q">Cari kode / nama</label>
+      <input id="q" type="search" placeholder="BBCA, bank…" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="liq">Likuiditas min / hari</label>
+      <select id="liq">
+        <option value="0">Semua</option>
+        <option value="500000000">Rp 500 jt</option>
+        <option value="1000000000" selected>Rp 1 M</option>
+        <option value="5000000000">Rp 5 M</option>
+        <option value="10000000000">Rp 10 M</option>
+        <option value="50000000000">Rp 50 M</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="sector">Sektor</label>
+      <select id="sector"><option value="">Semua sektor</option></select>
+    </div>
+    <div class="field">
+      <label>PER</label>
+      <div class="pair"><input id="perMin" type="number" placeholder="min" step="0.5"><input id="perMax" type="number" placeholder="maks" step="0.5"></div>
+    </div>
+    <div class="field">
+      <label>PBV</label>
+      <div class="pair"><input id="pbvMin" type="number" placeholder="min" step="0.1"><input id="pbvMax" type="number" placeholder="maks" step="0.1"></div>
+    </div>
+    <div class="field">
+      <label for="roeMin">ROE min (%)</label>
+      <input id="roeMin" type="number" placeholder="mis. 10" step="1">
+    </div>
+    <div class="field">
+      <label for="derMax">DER maks (x)</label>
+      <input id="derMax" type="number" placeholder="mis. 2" step="0.1">
+    </div>
+    <div class="field">
+      <label for="dyMin">Div yield min (%)</label>
+      <input id="dyMin" type="number" placeholder="mis. 4" step="0.5">
+    </div>
+    <div class="field">
+      <label for="mcapMin">Market cap min (T)</label>
+      <input id="mcapMin" type="number" placeholder="mis. 1" step="0.5">
+    </div>
+  </div>
+
+  <div class="toggles">
+    <label><input type="checkbox" id="tUp"> Di atas MA200</label>
+    <label><input type="checkbox" id="tGold"> Golden cross</label>
+    <label><input type="checkbox" id="tFund"> Punya data ROE/DER</label>
+    <label><input type="checkbox" id="tOver"> RSI &lt; 35 (oversold)</label>
+    <button class="chip" id="reset" type="button" style="margin-left:auto">Reset filter</button>
+  </div>
+</section>
+
+<section class="tiles" id="tiles"></section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Valuasi vs kualitas</h2>
+    <span class="note">Sumbu X: PBV · Sumbu Y: ROE · ukuran titik: market cap · garis putus-putus: PBV = 1</span>
+  </div>
+  <div class="chart-box">
+    <canvas id="scatter" aria-label="Sebaran PBV terhadap ROE"></canvas>
+    <div id="tip"></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Hasil screening</h2>
+    <span class="note" id="count"></span>
+  </div>
+  <div class="scroll"><table id="tbl">
+    <thead><tr id="hrow"></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+  <div class="empty" id="empty" hidden>Tidak ada emiten yang lolos filter ini.</div>
+</section>
+
+<footer>
+  <p><b>Sumber data: Yahoo Finance (bursa JKT).</b> Untuk riset pribadi — bukan rekomendasi beli atau jual.</p>
+  <p>Angka fundamental Yahoo sering telat untuk emiten kecil, dan emiten bertanda <span class="flag"></span> tidak punya data ROE/DER sehingga hanya dinilai dari PER, PBV dan momentum. Cek ulang ke laporan keuangan resmi di idx.co.id sebelum mengambil keputusan.</p>
+</footer>
+
+</div>
+
+<script>
+"use strict";
+
+/* ---------- data contoh (dipakai hanya kalau data.json tidak ada) ---------- */
+/* Kode emiten di bawah ini nyata, tapi SEMUA ANGKANYA DIBUAT ACAK. */
+const DEMO = (() => {
+  const seed = [
+    ["BBCA","Bank Central Asia","Financials"],["BBRI","Bank Rakyat Indonesia","Financials"],
+    ["BMRI","Bank Mandiri","Financials"],["TLKM","Telkom Indonesia","Communication Services"],
+    ["ASII","Astra International","Industrials"],["UNVR","Unilever Indonesia","Consumer Defensive"],
+    ["ICBP","Indofood CBP","Consumer Defensive"],["INDF","Indofood Sukses Makmur","Consumer Defensive"],
+    ["ADRO","Alamtri Resources","Energy"],["PTBA","Bukit Asam","Energy"],
+    ["ITMG","Indo Tambangraya Megah","Energy"],["ANTM","Aneka Tambang","Basic Materials"],
+    ["INCO","Vale Indonesia","Basic Materials"],["SMGR","Semen Indonesia","Basic Materials"],
+    ["KLBF","Kalbe Farma","Healthcare"],["MIKA","Mitra Keluarga","Healthcare"],
+    ["JPFA","Japfa Comfeed","Consumer Defensive"],["CPIN","Charoen Pokphand","Consumer Defensive"],
+    ["EXCL","XL Axiata","Communication Services"],["TOWR","Sarana Menara Nusantara","Communication Services"],
+    ["BSDE","Bumi Serpong Damai","Real Estate"],["CTRA","Ciputra Development","Real Estate"],
+    ["ACES","Aspirasi Hidup Indonesia","Consumer Cyclical"],["MAPI","Mitra Adiperkasa","Consumer Cyclical"],
+    ["GOTO","GoTo Gojek Tokopedia","Technology"],["BUKA","Bukalapak","Technology"],
+    ["UNTR","United Tractors","Industrials"],["AKRA","AKR Corporindo","Energy"]
+  ];
+  let s = 20261117;
+  const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  return seed.map(([ticker, name, sector], i) => {
+    const hasF = i % 5 !== 3;
+    const per = +(3 + rnd() * 35).toFixed(2);
+    const pbv = +(0.25 + rnd() * 4.5).toFixed(2);
+    const roe = hasF ? +(-6 + rnd() * 36).toFixed(1) : null;
+    const der = hasF ? +(0.1 + rnd() * 3.4).toFixed(2) : null;
+    const r6 = +(-40 + rnd() * 75).toFixed(1);
+    return {
+      ticker, name, sector,
+      close: Math.round(80 + rnd() * 9000),
+      chg: +(-6 + rnd() * 12).toFixed(2),
+      score: +(20 + rnd() * 75).toFixed(1),
+      per, pbv, roe, der,
+      dividend_yield: +(rnd() * 8).toFixed(2),
+      market_cap_t: +(0.4 + rnd() * 320).toFixed(2),
+      ret_1m: +(-18 + rnd() * 32).toFixed(1),
+      ret_3m: +(-28 + rnd() * 50).toFixed(1),
+      ret_6m: r6,
+      ret_1y: +(-45 + rnd() * 95).toFixed(1),
+      rsi14: Math.round(20 + rnd() * 62),
+      pct_from_high: +(-(rnd() * 55)).toFixed(1),
+      avg_value_20d: Math.round(2e8 + rnd() * 9e10),
+      volatility_ann: +(18 + rnd() * 60).toFixed(1),
+      above_ma50: rnd() > 0.45, above_ma200: rnd() > 0.5,
+      golden_cross: rnd() > 0.55, has_fundamentals: hasF
+    };
+  });
+})();
+
+/* ---------- state ---------- */
+let ROWS = [], META = null, VIEW = [];
+let sortKey = "score", sortDir = "desc", activePreset = "all";
+let QUOTE_META = null, pollTimer = null;
+
+/* Harga intraday dari quotes.json, di-refresh berkala.
+   Ini BUKAN realtime: data Yahoo untuk IDX sudah delay ~15-20 menit, dan
+   cron yang menulis file ini jalan tiap 15 menit. Umur data ditampilkan
+   di header supaya tidak ada yang mengira angkanya harga detik ini. */
+const POLL_MS = 60000;
+
+async function pullQuotes(){
+  try{
+    const res = await fetch("quotes.json", {cache:"no-store"});
+    if(!res.ok) return false;
+    const j = await res.json();
+    if(!j || !j.quotes) return false;
+
+    let hit = 0;
+    ROWS.forEach(r => {
+      const q = j.quotes[r.ticker];
+      if(!q || q.p === null || q.p === undefined) return;
+      r.close = q.p;
+      r.chg = (q.c === null || q.c === undefined) ? null : q.c;
+      hit++;
+    });
+    QUOTE_META = { ...j, hit };
+    return hit > 0;
+  }catch(_){ return false; }
+}
+
+function ageText(epoch){
+  if(!epoch) return null;
+  const mins = Math.round((Date.now()/1000 - epoch) / 60);
+  if(mins < 1) return "baru saja";
+  if(mins < 60) return `${mins} menit lalu`;
+  const h = Math.floor(mins/60);
+  if(h < 24) return `${h} jam lalu`;
+  return `${Math.floor(h/24)} hari lalu`;
+}
+
+function renderQuoteStatus(){
+  const el = $("liveStatus");
+  if(!QUOTE_META){ el.hidden = true; return; }
+  el.hidden = false;
+  const age = ageText(QUOTE_META.updated_epoch);
+  const open = QUOTE_META.market_state === "REGULAR";
+  const stale = QUOTE_META.updated_epoch
+    && (Date.now()/1000 - QUOTE_META.updated_epoch) > 3600;
+  el.className = "live" + (open && !stale ? " on" : stale ? " stale" : "");
+  el.innerHTML =
+    `<i></i>${open ? "Bursa buka" : "Bursa tutup"} · harga ${esc(age || "?")}` +
+    `<small>delay ~20-40 menit</small>`;
+}
+
+function startPolling(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    if(document.hidden) return;              // jangan boros saat tab tidak dilihat
+    if(await pullQuotes()){ renderQuoteStatus(); apply(); }
+  }, POLL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if(!document.hidden) pullQuotes().then(ok => { if(ok){ renderQuoteStatus(); apply(); } });
+  });
+}
+
+const $ = id => document.getElementById(id);
+const num = v => (v === null || v === undefined || v === "" || Number.isNaN(+v)) ? null : +v;
+
+const PRESETS = {
+  all:    { label:"Semua" },
+  value:  { label:"Value", f:r => num(r.per)>0 && r.per<=12 && num(r.pbv)>0 && r.pbv<=1.5 && num(r.roe)>=10 },
+  growth: { label:"Growth momentum", f:r => num(r.ret_6m)>=15 && num(r.roe)>=15 },
+  divid:  { label:"Dividen", f:r => num(r.dividend_yield)>=4 && num(r.der)!==null && r.der<=1.5 },
+  over:   { label:"Big cap oversold", f:r => num(r.rsi14)!==null && r.rsi14<35 && num(r.market_cap_t)>=10 },
+  trend:  { label:"Uptrend sehat", f:r => r.above_ma200 && r.golden_cross && num(r.roe)>=10 }
+};
+
+const COLS = [
+  { k:"ticker", t:"Kode",  cell:r => `<span class="tk">${r.ticker}</span>${r.has_fundamentals?"":'<span class="flag" title="Tidak ada data ROE/DER"></span>'}` },
+  { k:"name",   t:"Nama",  cls:"nm", cell:r => esc(r.name || "") },
+  { k:"sector", t:"Sektor",cls:"col-sector dim", cell:r => esc(r.sector || "—") },
+  { k:"close",  t:"Harga", n:1, fmt:v => v===null?"—":fmtInt(v) },
+  { k:"chg",    t:"Hari ini", n:1, fmt:pct, sign:1 },
+  { k:"score",  t:"Skor",  n:1, cell:r => r.score===null?"—":
+      `<span class="bar"><i style="width:${Math.max(2,r.score*0.42)}px"></i>${r.score.toFixed(0)}</span>` },
+  { k:"per",    t:"PER",   n:1, fmt:v => v===null?"—":v.toFixed(1) },
+  { k:"pbv",    t:"PBV",   n:1, fmt:v => v===null?"—":v.toFixed(2) },
+  { k:"roe",    t:"ROE",   n:1, fmt:v => v===null?"—":v.toFixed(1)+"%", sign:1 },
+  { k:"der",    t:"DER",   n:1, fmt:v => v===null?"—":v.toFixed(2) },
+  { k:"dividend_yield", t:"Div", n:1, fmt:v => v===null?"—":v.toFixed(1)+"%" },
+  { k:"market_cap_t", t:"MCap (T)", n:1, fmt:v => v===null?"—":v.toFixed(1) },
+  { k:"ret_1m", t:"1B", n:1, fmt:pct, sign:1 },
+  { k:"ret_6m", t:"6B", n:1, fmt:pct, sign:1 },
+  { k:"ret_1y", t:"1T", n:1, fmt:pct, sign:1 },
+  { k:"rsi14",  t:"RSI", n:1, fmt:v => v===null?"—":v.toFixed(0) },
+  { k:"pct_from_high", t:"vs 52mg", n:1, fmt:pct, sign:1 },
+  { k:"avg_value_20d", t:"Nilai/hari", n:1, fmt:fmtRp }
+];
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function pct(v){ return v===null ? "—" : (v>0?"+":"")+v.toFixed(1)+"%"; }
+function fmtInt(v){ return Math.round(v).toLocaleString("id-ID"); }
+function fmtRp(v){
+  if(v===null) return "—";
+  if(v>=1e12) return (v/1e12).toFixed(1)+" T";
+  if(v>=1e9)  return (v/1e9).toFixed(1)+" M";
+  if(v>=1e6)  return (v/1e6).toFixed(0)+" jt";
+  return fmtInt(v);
+}
+
+/* ---------- filter ---------- */
+function apply(){
+  const q = $("q").value.trim().toLowerCase();
+  const liq = +$("liq").value;
+  const sec = $("sector").value;
+  const g = id => num($(id).value);
+  const [perMin,perMax,pbvMin,pbvMax,roeMin,derMax,dyMin,mcapMin] =
+    ["perMin","perMax","pbvMin","pbvMax","roeMin","derMax","dyMin","mcapMin"].map(g);
+
+  const pre = PRESETS[activePreset];
+
+  VIEW = ROWS.filter(r => {
+    if(pre && pre.f && !pre.f(r)) return false;
+    if(q && !(r.ticker.toLowerCase().includes(q) || (r.name||"").toLowerCase().includes(q))) return false;
+    if(liq && (num(r.avg_value_20d) ?? 0) < liq) return false;
+    if(sec && r.sector !== sec) return false;
+
+    // Nilai kosong tidak otomatis dibuang — kalau user tidak set batasnya,
+    // emiten tanpa data itu tetap relevan untuk dilihat.
+    const chk = (v, min, max) => {
+      if(min===null && max===null) return true;
+      if(v===null) return false;
+      if(min!==null && v<min) return false;
+      if(max!==null && v>max) return false;
+      return true;
+    };
+    if(!chk(num(r.per), perMin, perMax)) return false;
+    if(!chk(num(r.pbv), pbvMin, pbvMax)) return false;
+    if(!chk(num(r.roe), roeMin, null)) return false;
+    if(!chk(num(r.der), null, derMax)) return false;
+    if(!chk(num(r.dividend_yield), dyMin, null)) return false;
+    if(!chk(num(r.market_cap_t), mcapMin, null)) return false;
+
+    if($("tUp").checked && !r.above_ma200) return false;
+    if($("tGold").checked && !r.golden_cross) return false;
+    if($("tFund").checked && !r.has_fundamentals) return false;
+    if($("tOver").checked && !(num(r.rsi14)!==null && r.rsi14 < 35)) return false;
+    return true;
+  });
+
+  VIEW.sort((a,b) => {
+    const x = a[sortKey], y = b[sortKey];
+    const xn = num(x), yn = num(y);
+    if(xn!==null && yn!==null) return sortDir==="asc" ? xn-yn : yn-xn;
+    if(xn===null && yn===null) return 0;
+    if(xn===null) return 1;              // kosong selalu di bawah
+    if(yn===null) return -1;
+    return sortDir==="asc" ? String(x).localeCompare(String(y)) : String(y).localeCompare(String(x));
+  });
+
+  renderTiles(); renderTable(); drawScatter();
+}
+
+function median(arr){
+  const v = arr.map(num).filter(x => x!==null).sort((a,b)=>a-b);
+  if(!v.length) return null;
+  const m = v.length>>1;
+  return v.length%2 ? v[m] : (v[m-1]+v[m])/2;
+}
+
+function renderTiles(){
+  const per = median(VIEW.map(r=>r.per)), pbv = median(VIEW.map(r=>r.pbv)), roe = median(VIEW.map(r=>r.roe));
+  $("tiles").innerHTML = [
+    ["Lolos filter", VIEW.length.toLocaleString("id-ID")],
+    ["Median PER", per===null?"—":per.toFixed(1)],
+    ["Median PBV", pbv===null?"—":pbv.toFixed(2)],
+    ["Median ROE", roe===null?"—":roe.toFixed(1)+"%"]
+  ].map(([k,v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  $("count").textContent = `${VIEW.length.toLocaleString("id-ID")} dari ${ROWS.length.toLocaleString("id-ID")} emiten`;
+}
+
+function renderTable(){
+  $("hrow").innerHTML = COLS.map(c =>
+    `<th data-k="${c.k}"${c.k===sortKey?` data-dir="${sortDir}"`:""} class="${c.cls||""}" tabindex="0" role="button">${c.t}</th>`
+  ).join("");
+
+  $("empty").hidden = VIEW.length > 0;
+  $("tbody").innerHTML = VIEW.slice(0, 400).map(r => "<tr>" + COLS.map(c => {
+    let inner, cls = c.cls || "";
+    if(c.cell) inner = c.cell(r);
+    else {
+      const v = num(r[c.k]);
+      inner = c.fmt ? c.fmt(v) : (v===null ? "—" : v);
+      if(c.sign && v!==null) cls += v>0 ? " up" : v<0 ? " down" : "";
+    }
+    if(c.n) cls += " num";
+    return `<td class="${cls.trim()}">${inner}</td>`;
+  }).join("") + "</tr>").join("");
+}
+
+/* ---------- sebar PBV vs ROE ---------- */
+function drawScatter(){
+  const cv = $("scatter"), tip = $("tip");
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w*dpr; cv.height = h*dpr;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  const css = getComputedStyle(document.documentElement);
+  const C = n => css.getPropertyValue(n).trim();
+  const pad = {l:48, r:14, t:12, b:34};
+  const pts = VIEW.filter(r => num(r.pbv)!==null && num(r.roe)!==null && r.pbv>0);
+
+  ctx.font = '11px ' + C("--font-mono");
+
+  if(!pts.length){
+    ctx.fillStyle = C("--fg-faint"); ctx.textAlign = "center";
+    ctx.fillText("Tidak ada emiten dengan data PBV dan ROE pada filter ini", w/2, h/2);
+    cv._pts = []; return;
+  }
+
+  const xs = pts.map(p=>p.pbv), ys = pts.map(p=>p.roe);
+  const x0 = 0, x1 = Math.max(1.2, Math.max(...xs)*1.05);
+  let y0 = Math.min(0, Math.min(...ys)), y1 = Math.max(...ys);
+  if(y1 - y0 < 5) y1 = y0 + 5;
+  y0 -= (y1-y0)*0.06; y1 += (y1-y0)*0.06;
+
+  const X = v => pad.l + (v-x0)/(x1-x0) * (w-pad.l-pad.r);
+  const Y = v => h-pad.b - (v-y0)/(y1-y0) * (h-pad.t-pad.b);
+
+  // grid + label sumbu
+  ctx.strokeStyle = C("--line"); ctx.fillStyle = C("--fg-faint"); ctx.lineWidth = 1;
+  const yTicks = 5;
+  for(let i=0;i<=yTicks;i++){
+    const v = y0 + (y1-y0)*i/yTicks, y = Math.round(Y(v))+0.5;
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(w-pad.r,y); ctx.stroke();
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.fillText(v.toFixed(0)+"%", pad.l-8, y);
+  }
+  const xTicks = 5;
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for(let i=0;i<=xTicks;i++){
+    const v = x0 + (x1-x0)*i/xTicks;
+    ctx.fillText(v.toFixed(1), X(v), h-pad.b+9);
+  }
+
+  // garis PBV = 1
+  if(x1 > 1){
+    ctx.save(); ctx.setLineDash([4,4]); ctx.strokeStyle = C("--fg-faint");
+    ctx.beginPath(); ctx.moveTo(X(1),pad.t); ctx.lineTo(X(1),h-pad.b); ctx.stroke(); ctx.restore();
+  }
+
+  // titik — makin tinggi skor makin pekat
+  const mcs = pts.map(p => num(p.market_cap_t) ?? 1);
+  const mcMax = Math.max(...mcs, 1);
+  const stored = [];
+  pts.forEach(p => {
+    const mc = num(p.market_cap_t) ?? 1;
+    const r = 3 + Math.sqrt(mc/mcMax) * 11;
+    const px = X(p.pbv), py = Y(p.roe);
+    const a = 0.3 + ((num(p.score) ?? 50)/100) * 0.6;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.roe >= 0 ? C("--accent") : C("--down");
+    ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+    stored.push({x:px, y:py, r:Math.max(r,7), d:p});
+  });
+  cv._pts = stored;
+
+  // label sumbu
+  ctx.fillStyle = C("--fg-dim"); ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  ctx.fillText("PBV", pad.l + (w-pad.l-pad.r)/2, h-2);
+  ctx.save(); ctx.translate(12, pad.t + (h-pad.t-pad.b)/2); ctx.rotate(-Math.PI/2);
+  ctx.textBaseline = "top"; ctx.fillText("ROE", 0, 0); ctx.restore();
+}
+
+function hookScatter(){
+  const cv = $("scatter"), tip = $("tip");
+  const move = e => {
+    const rect = cv.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    const mx = t.clientX - rect.left, my = t.clientY - rect.top;
+    let hit = null, best = 1e9;
+    (cv._pts || []).forEach(p => {
+      const d = Math.hypot(p.x-mx, p.y-my);
+      if(d < p.r && d < best){ best = d; hit = p; }
+    });
+    if(hit){
+      const d = hit.d;
+      tip.innerHTML = `${d.ticker} · PBV ${d.pbv.toFixed(2)} · ROE ${d.roe.toFixed(1)}%<br>MCap ${(num(d.market_cap_t)??0).toFixed(1)} T · skor ${(num(d.score)??0).toFixed(0)}`;
+      tip.style.opacity = 1;
+      const tw = tip.offsetWidth;
+      tip.style.left = Math.min(Math.max(hit.x - tw/2, 4), cv.clientWidth - tw - 4) + "px";
+      tip.style.top = Math.max(hit.y - tip.offsetHeight - 12, 2) + "px";
+    } else tip.style.opacity = 0;
+  };
+  cv.addEventListener("mousemove", move);
+  cv.addEventListener("touchstart", move, {passive:true});
+  cv.addEventListener("touchmove", move, {passive:true});
+  cv.addEventListener("mouseleave", () => tip.style.opacity = 0);
+}
+
+/* ---------- setup ---------- */
+function buildPresets(){
+  $("presets").innerHTML = Object.entries(PRESETS).map(([k,v]) =>
+    `<button class="chip" type="button" data-p="${k}" aria-pressed="${k===activePreset}">${v.label}</button>`
+  ).join("");
+}
+
+function buildSectors(){
+  const secs = [...new Set(ROWS.map(r => r.sector).filter(Boolean))].sort();
+  $("sector").innerHTML = '<option value="">Semua sektor</option>' +
+    secs.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+}
+
+function showMeta(demo){
+  const m = META || {};
+  const bits = demo
+    ? ["<b>Data contoh</b>", `${ROWS.length} emiten`, "angka dibuat acak"]
+    : [`Data per <b>${esc(m.data_date||"?")}</b>`,
+       `<b>${(m.total||ROWS.length).toLocaleString("id-ID")}</b> emiten`,
+       `<b>${(m.with_fundamentals||0).toLocaleString("id-ID")}</b> punya ROE/DER`,
+       `Diperbarui ${esc(m.generated_at||"—")}`,
+       esc(m.source||"Yahoo Finance")];
+  $("meta").innerHTML = bits.map(b => `<span>${b}</span>`).join("");
+}
+
+function resetFilters(){
+  ["q","perMin","perMax","pbvMin","pbvMax","roeMin","derMax","dyMin","mcapMin"].forEach(id => $(id).value = "");
+  ["tUp","tGold","tFund","tOver"].forEach(id => $(id).checked = false);
+  $("liq").value = "1000000000"; $("sector").value = "";
+  activePreset = "all"; buildPresets(); apply();
+}
+
+function wire(){
+  ["q","liq","sector","perMin","perMax","pbvMin","pbvMax","roeMin","derMax","dyMin","mcapMin"]
+    .forEach(id => $(id).addEventListener("input", apply));
+  ["tUp","tGold","tFund","tOver"].forEach(id => $(id).addEventListener("change", apply));
+  $("reset").addEventListener("click", resetFilters);
+
+  $("presets").addEventListener("click", e => {
+    const b = e.target.closest("[data-p]"); if(!b) return;
+    activePreset = b.dataset.p;
+    [...$("presets").children].forEach(c => c.setAttribute("aria-pressed", c.dataset.p===activePreset));
+    apply();
+  });
+
+  const sortBy = th => {
+    const k = th.dataset.k; if(!k) return;
+    if(k === sortKey) sortDir = sortDir==="desc" ? "asc" : "desc";
+    else { sortKey = k; sortDir = (k==="ticker"||k==="name"||k==="sector") ? "asc" : "desc"; }
+    apply();
+  };
+  $("hrow").addEventListener("click", e => { const th = e.target.closest("th"); if(th) sortBy(th); });
+  $("hrow").addEventListener("keydown", e => {
+    if(e.key==="Enter" || e.key===" "){ e.preventDefault(); const th = e.target.closest("th"); if(th) sortBy(th); }
+  });
+
+  $("themeBtn").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    const isDark = cur ? cur==="dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = isDark ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("idx-theme", next); } catch(_){}
+    drawScatter();
+  });
+
+  let t;
+  addEventListener("resize", () => { clearTimeout(t); t = setTimeout(drawScatter, 120); });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(drawScatter, 60));
+}
+
+try {
+  const saved = localStorage.getItem("idx-theme");
+  if(saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
+} catch(_){}
+
+async function boot(){
+  let demo = true;
+  try {
+    const res = await fetch("data.json", {cache:"no-store"});
+    if(res.ok){
+      const j = await res.json();
+      if(j && Array.isArray(j.rows) && j.rows.length){ ROWS = j.rows; META = j.meta || null; demo = false; }
+    }
+  } catch(_){ /* dibuka lewat file:// atau data.json belum di-commit */ }
+
+  if(demo){ ROWS = DEMO; $("demoBanner").hidden = false; }
+
+  buildPresets(); buildSectors(); showMeta(demo); wire(); hookScatter();
+
+  // Harga intraday hanya ditarik untuk data asli — menimpanya ke data contoh
+  // akan mencampur angka nyata dengan angka karangan.
+  if(!demo && await pullQuotes()){ renderQuoteStatus(); startPolling(); }
+
+  apply();
+}
+boot();
+</script>
+</body>
+</html>
